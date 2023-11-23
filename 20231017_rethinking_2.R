@@ -894,4 +894,70 @@ m_rugInterac = quap(
   ),
   data = rugFilt
 )
+
 precis(m_rugInterac, depth = 2)
+
+head(rugFilt)
+# add Africa-index (1= Africa, 2= not Africa)
+rugFilt$CID = ifelse(rugFilt$cont_africa == 1, 1, 2) # CID = continent ID
+
+# model that does not distinguish between Africa or not
+m8.1 = quap(
+  alist(
+    logGDP_std ~ dnorm(mu, sigma),
+    mu <- a + bR * (rug_std - 0.215),
+    #using hardcoded mean of standardized ruggedness
+    a ~ dnorm(1, .1),
+    bR ~ dnorm(0, 1),
+    sigma <- dexp(1)
+  ),
+  data = rugFilt
+)
+
+
+m8.2 = quap(
+  alist(
+    logGDP_std ~ dnorm(mu, sigma),
+    mu <- a[CID] + bR * (rug_std - 0.215),
+    #using hardcoded mean of standardized ruggedness
+    a[CID] ~ dnorm(1, .1),
+    bR ~ dnorm(0, 1),
+    sigma <- dexp(1)
+  ),
+  data = rugFilt
+)
+
+
+m8.3 = quap(
+  alist(
+    logGDP_std ~ dnorm(mu, sigma),
+    mu <- a[CID] + bR[CID] * (rug_std - 0.215),
+    #using hardcoded mean of standardized ruggedness
+    a[CID] ~ dnorm(1, .1),
+    bR[CID] ~ dnorm(0, 1),
+    sigma <- dexp(1)
+  ),
+  data = rugFilt
+)
+
+# compare models; check for influential datapoints
+compare(m8.1, m8.2, m8.3, func = PSIS)
+plot( PSIS(m8.1, pointwise = TRUE)$k )
+plot( PSIS(m8.2, pointwise = TRUE)$k )
+plot( PSIS(m8.3, pointwise = TRUE)$k )
+
+rugVec= rep( seq(0,1,0.01), 2)
+#CID_vec= rep( c(1,2), each= length(rugVec) )
+postPred8.3_Af= link(m8.3, data= cbind.data.frame(rug_std= rugVec, CID= rep(1, length(rugVec))))
+postPred8.3_nonAf= link(m8.3, data= cbind.data.frame(rug_std= rugVec, CID= rep(2, length(rugVec))))
+Af_mu= apply(postPred8.3_Af, 2, mean)
+AF_ci= apply(postPred8.3_Af, 2, PI, prob= 0.95)
+nonAf_mu= apply(postPred8.3_nonAf, 2, mean)
+nonAF_ci= apply(postPred8.3_nonAf, 2, PI, prob= 0.95)
+
+cols= c('black', 'blue')
+plot(rugFilt$rug_std, rugFilt$logGDP_std, pch= 16, col= cols[rugFilt$CID])
+shade(AF_ci, rugVec)
+lines(rugVec, Af_mu, col= 'black')
+shade(nonAF_ci, rugVec, col= col.alpha(rangi2, .3))
+lines(rugVec, nonAf_mu, col= 'blue')
