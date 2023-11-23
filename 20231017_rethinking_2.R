@@ -961,3 +961,86 @@ shade(AF_ci, rugVec)
 lines(rugVec, Af_mu, col= 'black')
 shade(nonAF_ci, rugVec, col= col.alpha(rangi2, .3))
 lines(rugVec, nonAf_mu, col= 'blue')
+
+########
+# Linear vs. quadratic model for cherry blossom
+library('rethinking')
+
+data(cherry_blossoms)
+head(cherry_blossoms)
+cherry= cherry_blossoms[!is.na(cherry_blossoms$doy),]
+head(cherry)
+plot(cherry$year, cherry$doy)
+#cherry$year_cent= cherry$year - mean(cherry$year)
+cherry$year_std= (cherry$year - min(cherry$year)) / (max(cherry$year) - min(cherry$year))
+cherry$doy_std= (cherry$doy - mean(cherry$doy)) / sd(cherry$doy) 
+plot(cherry$year_std, cherry$doy_std)
+
+m8_lin= quap(
+  alist(
+    doy_std ~ dnorm(mu, sigma),
+    mu <- a + b * year_std,
+    a ~ dnorm(0, 1),
+    b ~ dnorm(0, 1),
+    sigma <- dexp(1)
+  ),
+  data= cherry
+)
+precis(m8_lin)
+prior_lin= extract.prior(m8_lin, n = 20)
+post_lin= extract.samples(m8_lin, n = 20)
+plot(cherry$year_std, cherry$doy_std)
+for(i in 1:20){
+  lines(cherry$year_std, prior_lin$a[i] + prior_lin$b[i] * cherry$year_std, 
+        col= 'blue')
+  lines(cherry$year_std, post_lin$a[i] + post_lin$b[i] * cherry$year_std, 
+        col= 'red')
+}
+
+m8_quad= quap(
+  alist(
+    doy_std ~ dnorm(mu, sigma),
+    mu <- a + b * year_std + c * year_std^2,
+    a ~ dnorm(0, .5),
+    b ~ dnorm(0, 1),
+    c ~ dnorm(0, 1),
+    sigma <- dexp(1)
+  ),
+  data= cherry
+)
+precis(m8_quad)
+prior_quad= extract.prior(m8_quad, n = 20)
+post_quad= extract.samples(m8_quad, n = 20)
+plot(cherry$year_std, cherry$doy_std)
+for(i in 1:20){
+  lines(cherry$year_std, prior_quad$a[i] + prior_quad$b[i] * cherry$year_std + 
+          prior_quad$b[i] * cherry$year_std ^ 2, 
+        col= 'blue')
+  lines(cherry$year_std, post_quad$a[i] + post_quad$b[i] * cherry$year_std +
+          post_quad$c[i] * cherry$year_std ^ 2, 
+        col= 'red')
+}
+
+# compare models
+compare(m8_lin, m8_quad, func = PSIS)
+plot( PSIS(m8_lin, pointwise = TRUE)$k )
+points( PSIS(m8_quad, pointwise = TRUE)$k, col = 'green' )
+
+# Transform to original scale
+precis_quad = precis(m8_quad)
+a = precis_quad[1,1]
+b = precis_quad[2,1]
+c = precis_quad[3,1]
+xmin= min(cherry$year)
+xmax= max(cherry$year)
+ymean= mean(cherry$doy)
+ysd= sd(cherry$doy)
+
+( a_resc = ymean + a * ysd - 
+  b * xmin / (xmax - xmin) * ysd +
+  c * xmin^2 / (xmax - xmin)^2 * ysd )
+( b_resc = (b / (xmax - xmin)) * ysd - 2 * c * xmin / (xmax - xmin)^2 * ysd )
+( c_resc = c / (xmax - xmin)^2 * ysd )
+
+plot(cherry$year, cherry$doy)
+curve(a_resc + b_resc * x + c_resc * x^2, add = TRUE, col = 'red', lwd = 3)
